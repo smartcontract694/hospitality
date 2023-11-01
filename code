@@ -1,0 +1,235 @@
+pragma solidity >0.8.6;
+
+///////////////////////
+///Registration SC////
+//////////////////////
+
+contract Registration{
+   
+    address manager; // EA
+    mapping(address=>bool) RegisteredFBretailors;
+     mapping(address=>bool) RegisteredFarmers;
+      mapping(address=>bool) RegisteredFoodProcessors;
+      mapping(address=>bool) RegisteredDistributers;
+      
+   
+    constructor() public{
+       manager= msg.sender;
+    }
+   
+    modifier onlyManager{
+      require(msg.sender == manager);
+      _;
+    }
+    modifier onlyRegisteredFBretailors{
+      require(RegisteredFBretailors[msg.sender]); 
+      _;
+    }
+   //Farmers
+    function RegisterFarmer(address a) onlyManager public{
+        RegisteredFarmers[a]=true;
+    }
+   
+    function RevokeFarmer(address a) onlyManager public{
+        RegisteredFarmers[a]=false;
+    }
+   
+    function RegisteredFarmer(address a) public  returns (bool){
+        return RegisteredFarmers[a];
+       
+    }
+    //FBretailors
+      function RegisterFBretailors(address a) onlyManager public{
+        RegisteredFBretailors[a]=true;
+    }
+   
+    function RevokeFBretailors(address a) onlyManager public{
+        RegisteredFBretailors[a]=false;
+    }
+   
+    function RegisteredFBretailor(address a) public returns (bool) {
+        return RegisteredFBretailors[a];
+    }
+     //FoodProcessors
+      function RegisterFoodProcessors(address a) onlyManager public{
+        RegisteredFoodProcessors[a]=true;
+    }
+   
+    function RevokeFoodProcessors(address a) onlyManager public{
+        RegisteredFoodProcessors[a]=false;
+    }
+   
+    function RegisteredFoodProcessor(address a) public returns (bool) {
+        return (RegisteredFoodProcessors[a]);    
+       
+    }
+    //RegisteredDistributers    
+       function RegisterDistributer(address a) onlyManager public{
+        RegisteredDistributers[a]=true;
+    }
+   
+    function RevokeDistributer(address a) onlyManager public{
+        RegisteredDistributers[a]=false;
+    }
+   
+    function RegisteredDistributer(address a) public returns (bool){
+        return (RegisteredDistributers[a]);    
+       
+    }
+
+   
+}
+
+contract FBretailor{
+address FBretailorManager;
+mapping(address=>bool) chefs;
+
+bytes32 menuMappingHash;
+
+ constructor()public {
+        FBretailorManager=msg.sender;
+ }
+
+//events
+event MenuItemIsPrepped(uint menuItemNo,string menuItemName, address chef);
+event customerOrderDetails(address customer, uint transactionNumb, uint menuItemNo);
+event MenuMappingListUploadedSuccessfully(bytes32 hash);
+
+modifier onlyFBretailorManager{
+      require(msg.sender == FBretailorManager);
+      _;
+    }
+
+function registerChef(address c) onlyFBretailorManager public{
+    chefs[c] = true;
+}
+
+function uploadMenuMappingList(bytes32 hash) onlyFBretailorManager public{
+    menuMappingHash = hash;
+    emit MenuMappingListUploadedSuccessfully(hash);
+}
+
+
+  function prepMenuItem(uint menuItemNo, string memory menuItemName) public {
+        require(chefs[msg.sender]);    //only registered chefs in the FBRetailor
+       emit MenuItemIsPrepped(menuItemNo, menuItemName, msg.sender);
+    }
+
+    function submitCustomerOrder(address customer, uint transactionNumb, uint menuItemNo )onlyFBretailorManager public
+    {
+
+        emit customerOrderDetails(customer, transactionNumb, menuItemNo);
+    }
+}
+
+contract OrderingManagementSC
+{
+    Registration registrationContract;
+
+    constructor(address registrationAddress)public {
+            registrationContract=Registration(registrationAddress);
+    }
+
+    //events
+    event RawMaterialsOrderedSuccessfullyFromFarm(address farmer, string name, uint quantity, uint menuItemNum, string expiryDate);
+    event RawMaterialsOrderedSuccessfullyFromFoodProcessor(address foodProcessor, string name, uint quantity, uint menuItemNum, string expiryDate);
+
+    //must be a registered F&B and registered farm
+  function  orderRawMaterialsFromFarm(address farmer, string memory name, uint quantity, uint menuItemNum, string memory expiryDate ) public
+    {
+        require(registrationContract.RegisteredFarmer(farmer));
+        require(registrationContract.RegisteredFBretailor(msg.sender));
+        emit RawMaterialsOrderedSuccessfullyFromFarm(farmer, name, quantity, menuItemNum, expiryDate);
+    }
+
+  //must be a registered F&B and registered foodProcessor
+  function  orderRawMaterialsFromFoodProcessor(address foodProcessor, string memory name, uint quantity, uint menuItemNum, string memory expiryDate ) public
+    {
+        require(registrationContract.RegisteredFoodProcessor(foodProcessor));
+        require(registrationContract.RegisteredFBretailor(msg.sender));
+        emit RawMaterialsOrderedSuccessfullyFromFoodProcessor(foodProcessor, name, quantity, menuItemNum, expiryDate);
+    }
+}
+
+contract WasteAssessment{
+
+address manager;
+Registration registrationContract;
+uint ConsWaste;
+uint NonConsWaste;
+enum contractState {ready, WasteReportInProgress, NoFeeReq, paymentReceived  }
+contractState public state;
+uint fee;
+address currentFBretailor;
+//event
+event NonconsumableWasteFeeMustBePaid(address FBretailor, uint NonConsFee);
+event NoFeeNeededForNonconsumableWaste(address FBretailor);
+event ConsumableWasteFeeMustBePaid(address FBretailor, uint ConsFee);
+event NoFeeNeededForConsumableWaste(address FBretailor);
+event TotalFee(address FBretailor, uint Total);
+event PaymentReceivedFromFBretailor(address FBretailor);
+
+modifier OnlyCurrentFBretailor(){
+     require(msg.sender == currentFBretailor); 
+      _;
+}
+
+modifier OnlyWasteManager(){
+    require(msg.sender == manager);
+    _;
+}
+
+constructor(address registrationAddress)public {
+        registrationContract=Registration(registrationAddress);
+        manager = msg.sender;
+        ConsWaste = 0;
+        NonConsWaste = 0;
+        fee = 0;
+        state = contractState.ready;
+ }
+
+    function ReportFoodWaste(uint NonconsumableWaste, uint ConsumableWaste) public{
+        
+        require(registrationContract.RegisteredFBretailor(msg.sender) && (state == contractState.ready ));
+        currentFBretailor = msg.sender;
+        if(NonconsumableWaste > 5){
+        fee = computeFee(1, NonconsumableWaste);
+        emit NonconsumableWasteFeeMustBePaid(msg.sender, fee);
+        } 
+        else 
+        emit NoFeeNeededForNonconsumableWaste(msg.sender);
+        if(ConsumableWaste > 5){
+        uint consFee =  computeFee(2, ConsumableWaste);
+        emit ConsumableWasteFeeMustBePaid(msg.sender, consFee);
+        fee =  fee+consFee;
+          
+        }
+        else{
+        emit NoFeeNeededForConsumableWaste(msg.sender);}
+        state = contractState.WasteReportInProgress;
+         emit TotalFee(msg.sender, fee);
+
+    }
+
+    function computeFee(uint wasteType, uint wasteAmount) internal returns (uint)//1 uncosumable, 2 consumable
+    {
+         
+        if(wasteType == 1)
+             return  (wasteAmount /3);
+        if(wasteType == 2)
+             return (wasteAmount /4);
+    }
+
+    function payFees()  public payable OnlyCurrentFBretailor
+    {
+        require ((msg.sender == currentFBretailor) && (state == contractState.WasteReportInProgress));
+        require(msg.value == (fee * 1 ether));
+        emit PaymentReceivedFromFBretailor(msg.sender);
+        state = contractState.paymentReceived;
+        payable(manager).transfer(msg.value);
+        state = contractState.ready;
+
+    }
+
+   
+}
